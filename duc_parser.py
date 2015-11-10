@@ -73,22 +73,16 @@ def idf(term, docs):
         if found: docTermLen += 1
     return math.log10(docLen / float(docTermLen))
 
-# return true if a term exist in a sentence
-def contains_term(term, sentence):
-    for w in sentence['words']:
-        if (w['stem'].lower() == term.lower()):
-            return True
-    return False
-
 # concept feature of two sequential terms in a doc
 def concept_feature_two_terms(term1, term2, doc):
     total = 0
     totalCompound = 0
+    appearance = {}
     appearance[term1] = 0
     appearance[term2] = 0
     appearance[term1 + ' ' + term2] = 0
-    prevWord = None
     for s in doc['sentences']:
+        prevWord = None
         for w in s['words']:
             total +=1
             currentWord = w['stem']
@@ -98,15 +92,17 @@ def concept_feature_two_terms(term1, term2, doc):
             elif currentWord.lower() == term2.lower():
                 appearance[term2] += 1
             # check co-appearance with previous word
-            if prevTerm == None:
-                prevWord = currentWord
-            elif (prevWord.lower() == term1.lower() and currentWord.lower() == term2.lower()):
-                appearance[term1 + ' ' + term2] += 1
+            if prevWord != None:
+                totalCompound += 1
+                if (prevWord.lower() == term1.lower() and currentWord.lower() == term2.lower()):
+                    appearance[term1 + ' ' + term2] += 1
+            if currentWord != None: prevWord = currentWord
     # calculate probability
     appearance[term1] = appearance[term1] / float(total)
     appearance[term2] = appearance[term2] / float(total)
     appearance[term1 + ' ' + term2] = appearance[term1 + ' ' + term2] / float(totalCompound)
-    return math.log(appearance[term1 + ' ' + term2] / appearance[term1] * appearance[term2], 2)
+    wi = appearance[term1 + ' ' + term2] / appearance[term1] * appearance[term2]
+    return math.log(wi, 2) if (wi > 0.0) else 0.0
 
 # calculate f1 title similarity
 def title_similarity(title, sentence):
@@ -138,9 +134,19 @@ def term_weight(sentence, docs):
     return tw / sentenceLen
 
 # calculate f4 concept feature
-def concept_feature():
-
-    return 0
+def concept_feature(sentence, doc):
+    prevWord = None
+    totalConceptFeature = 0
+    totalCompound = 0
+    if len(sentence['words']) > 1:
+        for w in sentence['words']:
+            currentWord = w['stem']
+            #print 'prev: {0} | current: {1}'.format(prevWord, currentWord)
+            if prevWord != None:
+                totalConceptFeature += concept_feature_two_terms(prevWord, currentWord, doc)
+                totalCompound += 1
+            if currentWord != None: prevWord = currentWord
+    return (totalConceptFeature / float(totalCompound)) if (totalCompound > 0) else 0
 
 # main program
 # expected sys.argv[1] = /home/yohanes/Workspace/duc/05/d301i
@@ -149,15 +155,21 @@ if (len(sys.argv) >= 2):
 else:
     sys.exit('please provide dir path of DUC dataset')
 docs = parse_duc_dir(dir)
+feature_matrices = []
 for doc in docs:
     print 'Title: {0}'.format(doc['title'])
     title = doc['sentences'][0]
     docLen = len(doc['sentences'])
     # start from 1 to skip title
+    feature_vectors = []
     for i in range(1, docLen):
         s = doc['sentences'][i]
-        print s['text']
+        # print s['text']
         f1 = title_similarity(title, s)
         f2 = positional_feature(i, docLen-1) # -1 because title is excluded
         f3 = term_weight(s, docs)
-        print 'similarity: {0} | positional: {1} | term weight: {2}'.format(f1, f2, f3)
+        f4 = concept_feature(s, doc)
+        # print 'similarity: {0} | positional: {1} | term weight: {2} | concept: {3}'.format(f1, f2, f3, f4)
+        feature_vectors.append([f1, f2, f3, f4])
+        print '{0}\t{1}\t{2}\t{3}'.format(f1, f2, f3, f4)    
+    feature_matrices.append(feature_vectors)
